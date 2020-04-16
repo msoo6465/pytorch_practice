@@ -64,7 +64,7 @@ portalocker==1.5.2
 preshed==3.0.2
 progress==1.5
 protobuf==3.11.3
-psutil==5.4.2
+psutil==5.6.6
 pyarmor==5.9.6
 pyasn1==0.4.8
 pyasn1-modules==0.2.8
