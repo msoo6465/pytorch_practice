@@ -4,13 +4,14 @@ import time
 
 import urllib3
 from selenium import webdriver
+from tqdm import tqdm
 
 options = webdriver.ChromeOptions()
 options.add_argument('headless')
 options.add_argument('window-size=1920x1080')
 options.add_argument("disable-gpu")
 
-searchterm = '강아지'  # will also be the name of the folder
+searchterm = '고양이'  # will also be the name of the folder
 
 if __name__ == '__main__':
     # NEED TO DOWNLOAD CHROMEDRIVER, insert path to chromedriver inside parentheses in following line(https://sites.google.com/a/chromium.org/chromedriver/downloads)
@@ -40,7 +41,6 @@ if __name__ == '__main__':
             browser.find_element_by_class_name('mye4qd').click()
 
         if isShowBottom==3 and not isShowMoreButton:
-            # 마지막 바닥과 버튼 요소가 보이지 않으므로 검색이 끝난것으로 판단하고 종료
             break
 
     retries = urllib3.Retry(connect=5, read=2, redirect=5)
@@ -55,14 +55,18 @@ if __name__ == '__main__':
         except Exception as e:
             print("can't get img")
             print(e)
-    print(link)
+    # print(link)
     import urllib.request
 
     count = 0
-    for url in link:
+    for url in tqdm(link):
         try:
             count+=1
-            urllib.request.urlretrieve(url,'./tmp/img'+str(count)+'.jpg')
+            if searchterm == '강아지':
+                tmp = 'dog'
+            else:
+                tmp = 'cat'
+            urllib.request.urlretrieve(url,'./tmp/'+tmp+'.'+str(count)+'.jpg')
         except Exception as e:
             print('Error',e)
     print(count, "pictures succesfully downloaded")
