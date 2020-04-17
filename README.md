@@ -1,7 +1,7 @@
-# pytorch_practice
-### Train
-    $ python main.py
-### Test
-    $ python test.py 
-#### Data
- Download in kaggle(dog and cat classification.)
+# Pytorch Practice
+## Classification
+    Classification task 
+    Data : dog and cat
+
+## Object Detection
+    Object Detection task
