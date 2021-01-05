@@ -1,1 +1,9 @@
+*.tar
+*.pth
+*.jpg
+*.png
+
+
+flower_data/
+bread_data/
 *data/
