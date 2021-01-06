@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import torch.utils.data as data
 from PIL import Image
+import imgaug.augmenters as iaa
 
 IMG_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.ppm', '.bmp', '.pgm', '.tif', '.tiff', '.webp')
 
@@ -15,6 +16,12 @@ def pil_loader(path):
         img = Image.open(f)
         return img.convert('RGB')
 
+"""
+커스텀 데이터 셋은 총 3가지의 기본 오버라이딩 함수로 이루어져 있다.
+__init__ , __getitem__, __len__
+__init__ : 데이터의 위치와 타겟의 라벨링을 하는 부분
+__getitem__ : 데이터의 위치에 해당하는 실제 이미지 값을 불러와 이미지 변환을 시켜주는 부분.
+"""
 
 class ImageFolder(data.Dataset):
     def __init__(self, root, transform=None, target_transform=None, loader=pil_loader, extensions=IMG_EXTENSIONS, is_valid_file=None):
@@ -26,6 +33,7 @@ class ImageFolder(data.Dataset):
         self.target_transform = target_transform
         self.loader = loader
         self.extensions = extensions
+        self.is_valid_file = is_valid_file
 
         # read directory
         label_list = os.listdir(self.root)
@@ -52,6 +60,7 @@ class ImageFolder(data.Dataset):
                     continue
 
                 # append to sample (image_path, label)
+                ## sample의 형태 (image_path, index) index는 라벨에 맞는 번호로써 학습이나 밸리데이션 하는 부분에서 비교 하기 위해 label을 index화 시킴
                 samples.append((os.path.join(label_dir, filename), index))  # Caution: we use index as label, no directory name
 
         self.samples = samples

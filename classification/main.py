@@ -13,6 +13,7 @@ import torch.distributed as dist
 ## torch.distributed는 분산처리를 위한 라이브러리
 import torch.optim
 import torch.multiprocessing as mp
+import imgaug.augmenters as iaa
 ''' 멀티프로세스를 위한 라이브러리
 멀티프로세스는 하나의 프로그램을 여러개의 프로세스로 구성하여 각 프로세스가 하나의 작업을 처리하도록 하는 것
 장점 : 여러개의 자식 프로세스 중 하나에 문제가 발생하면 그 자식 프로세스만 죽는 것이상으로 다른 영향이 확산되지 않는다.
@@ -176,7 +177,7 @@ def main_worker(gpu, ngpus_per_node, args):
                                 world_size=args.world_size, rank=args.rank)
         '''
         분산 처리 프로세스 그룹을 초기화
-        backend는 ???
+        backend는 프로세스간의 통신 프로토콜
         init_method는 초기화 방법을 지정하는 URL, 기본값은 'env://'
         world_size는 작업에 참여하는 프로세스 수
         rank는 현재 프로세스의 순위
@@ -282,7 +283,6 @@ def main_worker(gpu, ngpus_per_node, args):
     valdir = os.path.join(args.data, 'val')
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
-
     ## 데이터셋 로드 하는 부분
     ## RandomResizedCrop은 랜덤하게 224x224 만큼 잘라내는 함수
     ## 파라미터로는 size, scale, ratio, interpolation이 있다.
@@ -290,6 +290,9 @@ def main_worker(gpu, ngpus_per_node, args):
     train_dataset = ImageFolder(
         traindir,
         transforms.Compose([
+            transforms.ColorJitter(brightness=(0,0.3),hue = (-0.3,0.3)),
+            transforms.RandomAffine(degrees=(0,20)),
+            transforms.RandomRotation((0,20)),
             transforms.RandomResizedCrop(224),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
@@ -411,8 +414,6 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
 
         ## 역전파 시행 후 적용
         optimizer.zero_grad()
-        if i ==3 :
-            exit()
         loss.backward()
         optimizer.step()
 
