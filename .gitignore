@@ -6,4 +6,5 @@
 
 flower_data/
 bread_data/
-*data/
+*_data
+result
