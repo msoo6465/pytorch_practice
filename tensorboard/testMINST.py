@@ -3,7 +3,10 @@ import torchvision.datasets as dsets
 import torchvision.transforms as transforms
 import torch.nn.init
 import argparse
-from MNIST_model import MNIST_model
+
+# from tensorboard.models.litmnistmodel import DNNet
+from models import MNIST_model
+from models import litmnistmodel
 import os
 import shutil
 
@@ -28,6 +31,8 @@ parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
 
 best_acc = 0
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+
 def main():
     global best_acc
     global device
@@ -55,13 +60,13 @@ def main():
                                               batch_size=args.batch_size,
                                               shuffle=False,
                                               drop_last=False)
-    # print(len(test_loader))
-    #
-    # print([type(d) for i, d in test_loader])
-    model = MNIST_model().to(device)
 
+    model = MNIST_model.MNIST_model().to(device)
+    # model = litmnistmodel.DNNet().to(device)
+
+    # criterion = torch.nn.functional.nll_loss
     criterion = torch.nn.CrossEntropyLoss().to(device)
-    optimizer = torch.optim.Adam(model.parameters(),lr=args.lr)
+    optimizer = torch.optim.SGD(model.parameters(),lr=args.lr,momentum=0.9)
 
     total_batch = len(data_loader)
     print(f'총 배치의 수 : {total_batch}')
@@ -85,9 +90,10 @@ def main():
         validation(test_loader, model, criterion, args)
         return
 
+
     for epoch in range(args.epochs):
         avg_cost = 0
-
+        model.train()
         for i,(X,Y) in enumerate(data_loader):
 
             X = X.to(device)
@@ -95,15 +101,15 @@ def main():
 
             optimizer.zero_grad()
             pred = model(X)
-            cost = criterion(pred,Y)
-            cost.backward()
+            loss = criterion(pred,Y)
+            loss.backward()
             optimizer.step()
 
-            avg_cost += cost/total_batch
+            avg_cost += loss/total_batch
             if i%1000 == 0:
                 print(f'[{i}/{total_batch}] Training')
                 break
-        adjust_learning_rate(optimizer,epoch,args)
+        # adjust_learning_rate(optimizer,epoch,args)
         acc1 = validation(test_loader,model,criterion,args)
 
         print('[Epoch : {:>4}] cost = {:>.9}'.format(epoch+1,avg_cost))
@@ -119,20 +125,22 @@ def main():
 
 def validation(test_loader,model,criterion,args):
     global device
-    accuracy = 0
+    correct = 0
     model.eval()
-    for i, (inp,tar) in enumerate(test_loader):
-        X_test = inp.to(device)
-        Y_test = tar.to(device)
+    with torch.no_grad():
+        for i, (inp,tar) in enumerate(test_loader):
 
-        prediction = model(X_test)
-        # print(torch.argmax(prediction,1))
-        # print(Y_test)
-        correct_prediction = torch.argmax(prediction,1)==Y_test
-        # print(correct_prediction.float().mean())
-        accuracy += correct_prediction.float().mean()
-    print('Accuracy : ',accuracy.item()/(i+1))
-    return accuracy.item()/(i+1)
+            X_test = inp.to(device)
+            Y_test = tar.to(device)
+            prediction = model(X_test)
+            # print(prediction)
+            # print(torch.argmax(prediction,1))
+            pred = prediction.argmax(dim=1,keepdim=True)
+            correct += pred.eq(Y_test.view_as(pred)).sum().item()
+            # print(correct_prediction.float().mean())
+            # accuracy += correct_prediction.float().mean()
+    print('Accuracy : {',correct,'}/{',len(test_loader.dataset),'}')
+    return correct
 
 
 
@@ -143,10 +151,10 @@ def adjust_learning_rate(optimizer, epoch, args):
         param_group['lr'] = lr
 
 
-def save_checkpoint(state,is_best,filename = 'mnsitpoint.pth.tar'):
+def save_checkpoint(state,is_best,filename = 'litemnsitpoint.pth.tar'):
     torch.save(state,filename)
     if is_best:
-        shutil.copyfile(filename,'mnist_best.pth.tar')
+        shutil.copyfile(filename,'litemnist_best.pth.tar')
 
 if __name__ == '__main__':
     main()
