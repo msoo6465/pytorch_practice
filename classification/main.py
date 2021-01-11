@@ -14,6 +14,7 @@ import torch.distributed as dist
 import torch.optim
 import torch.multiprocessing as mp
 import imgaug.augmenters as iaa
+import numpy as np
 ''' 멀티프로세스를 위한 라이브러리
 멀티프로세스는 하나의 프로그램을 여러개의 프로세스로 구성하여 각 프로세스가 하나의 작업을 처리하도록 하는 것
 장점 : 여러개의 자식 프로세스 중 하나에 문제가 발생하면 그 자식 프로세스만 죽는 것이상으로 다른 영향이 확산되지 않는다.
@@ -31,6 +32,9 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torchvision.models as models
 from ImageFolder import ImageFolder
+from model import resnet
+import cv2
+
 
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -290,10 +294,11 @@ def main_worker(gpu, ngpus_per_node, args):
     train_dataset = ImageFolder(
         traindir,
         transforms.Compose([
-            transforms.ColorJitter(brightness=(0,0.3),hue = (-0.3,0.3)),
-            transforms.RandomAffine(degrees=(0,20)),
+            transforms.ColorJitter(brightness=(0.75,1),hue = (-0.1,0.1)),
+            transforms.RandomAffine(degrees=(0,15),translate=(0.05,0.05),shear =(10,10)),
             transforms.RandomRotation((0,20)),
             transforms.RandomResizedCrop(224),
+            transforms.Resize((224,224)),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             normalize,
@@ -420,7 +425,6 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
         ## 시간 측정
         batch_time.update(time.time() - end)
         end = time.time()
-
         if i % args.print_freq == 0:
             progress.display(i)
 
@@ -453,7 +457,7 @@ def validate(val_loader, model, criterion, args):
             loss = criterion(output, target)
 
             # measure accuracy and record loss
-            acc1, acc5 = accuracy(output, target, topk=(1, 5))
+            acc1, acc5 = accuracy(output, target, topk=(1, 1))
             losses.update(loss.item(), images.size(0))
             top1.update(acc1[0], images.size(0))
             top5.update(acc5[0], images.size(0))
@@ -540,6 +544,7 @@ def accuracy(output, target, topk=(1,)):
         for k in topk:
             correct_k = correct[:k].reshape(-1).float().sum(0, keepdim=True)
             res.append(correct_k.mul_(100.0 / batch_size))
+        print('res : ',res)
         return res
 
 
