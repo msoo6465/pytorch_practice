@@ -15,6 +15,8 @@ import torch.optim
 import torch.multiprocessing as mp
 import imgaug.augmenters as iaa
 import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 ''' 멀티프로세스를 위한 라이브러리
 멀티프로세스는 하나의 프로그램을 여러개의 프로세스로 구성하여 각 프로세스가 하나의 작업을 처리하도록 하는 것
 장점 : 여러개의 자식 프로세스 중 하나에 문제가 발생하면 그 자식 프로세스만 죽는 것이상으로 다른 영향이 확산되지 않는다.
@@ -34,7 +36,8 @@ import torchvision.models as models
 from ImageFolder import ImageFolder
 from model import resnet
 import cv2
-
+from sklearn.manifold import TSNE
+import seaborn as sns
 
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -93,6 +96,11 @@ parser.add_argument('--multiprocessing-distributed', action='store_true',
                          'N processes per node, which has N GPUs. This is the '
                          'fastest way to use PyTorch for either single node or '
                          'multi node data parallel training')
+parser.add_argument('-g','--gradcam',dest='gradcam',action='store_true',
+                    help='See grad cam')
+parser.add_argument('-t','--tsne',dest='tsne',action='store_true',
+                    help='See tSNE')
+
 ## argument 파싱하는 부분
 ## 학습할 것인지, 밸리데이션 할것인지, 모델이름, gpu사용  할것인지 등에 대한 정보를 입력해주는 부분
 
@@ -192,15 +200,18 @@ def main_worker(gpu, ngpus_per_node, args):
     if args.pretrained:
         ## 사전훈련된 모델을 사용하기 위한 코드
         print("=> using pre-trained model '{}'".format(args.arch))
-        model = models.__dict__[args.arch](pretrained=True)
+        # model = models.__dict__[args.arch](pretrained=True)
+        model = resnet.resnet18(pretrained=True,num_classes=5)
     else:
         ## 일반 모델을 사용하기 위한 코드
         print("=> creating model '{}'".format(args.arch))
-        model = models.__dict__[args.arch]()
+        model = resnet.resnet18(num_classes=5)
+        # model = models.__dict__[args.arch]()
 
     if not torch.cuda.is_available():
         ## gpu를 사용할 수 없으면 cpu를 사용하는 코드
         print('using CPU, this will be slow')
+
     elif args.distributed:
         '''
         멀티 프로세스 분산을 사용하기 위해서는 병렬분산 생성자를 항상 단일 장치 범위를 설정해야 한다.
@@ -266,10 +277,20 @@ def main_worker(gpu, ngpus_per_node, args):
                 ## map_location은 어떤 gpu에 로드 할 것인지
             args.start_epoch = checkpoint['epoch']
             best_acc1 = checkpoint['best_acc1']
+
             if args.gpu is not None:
                 # best_acc1 may be from a checkpoint from a different GPU
                 best_acc1 = best_acc1.to(args.gpu)
-            model.load_state_dict(checkpoint['state_dict'])
+            from collections import OrderedDict
+            new_state_dict = OrderedDict()
+
+            state_dict = checkpoint['state_dict']
+
+            for k,v in state_dict.items():
+                if 'module' in k:
+                    r = k[7:]
+                new_state_dict[r] = v
+            model.load_state_dict(new_state_dict)
             optimizer.load_state_dict(checkpoint['optimizer'])
             print("=> loaded checkpoint '{}' (epoch {})"
                   .format(args.resume, checkpoint['epoch']))
@@ -291,18 +312,23 @@ def main_worker(gpu, ngpus_per_node, args):
     ## RandomResizedCrop은 랜덤하게 224x224 만큼 잘라내는 함수
     ## 파라미터로는 size, scale, ratio, interpolation이 있다.
     ## RandomHorizontalFlip은 랜덤하게 뒤집는 함수 파라미터로는 p가 있는데 뒤집힐 확률
+
+    trans = transforms.Compose([
+        transforms.ColorJitter(brightness=(0.75, 1), hue=(-0.1, 0.1)),
+        transforms.RandomAffine(degrees=(0, 15), translate=(0.05, 0.05), shear=(10, 10)),
+        transforms.RandomRotation((0, 20)),
+        transforms.RandomResizedCrop(224),
+        transforms.Resize((224, 224)),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        normalize,
+    ])
+
     train_dataset = ImageFolder(
         traindir,
-        transforms.Compose([
-            transforms.ColorJitter(brightness=(0.75,1),hue = (-0.1,0.1)),
-            transforms.RandomAffine(degrees=(0,15),translate=(0.05,0.05),shear =(10,10)),
-            transforms.RandomRotation((0,20)),
-            transforms.RandomResizedCrop(224),
-            transforms.Resize((224,224)),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            normalize,
-        ]))
+        transform= trans,
+    )
+
 
     if args.distributed:
         '''
@@ -353,6 +379,136 @@ def main_worker(gpu, ngpus_per_node, args):
         validate(val_loader, model, criterion, args)
         return
 
+    if args.gradcam:
+        # model = MNIST_model.MNIST_model()
+        model.cpu()
+        model.eval()
+
+        val_loader = torch.utils.data.DataLoader(
+            ImageFolder(valdir, transforms.Compose([
+                transforms.Resize(256),
+                transforms.CenterCrop(224),
+                transforms.ToTensor(),
+                normalize,
+            ])),
+            batch_size=1, shuffle=False,
+            num_workers=args.workers, pin_memory=True)
+        for index, (img,_) in enumerate(val_loader):
+            # img, _ = next(iter(val_loader))
+            pred = model(img.cpu())
+
+            pred[:, _.item()].backward()
+
+            gradients = model.get_activations_gradient()
+
+            pooled_gradients = torch.mean(gradients, dim=[0, 2, 3])
+            activations = model.get_activations(img).detach()
+
+
+            for i in range(512):
+                activations[:, i, :, :] *= pooled_gradients[i]
+
+            heatmap = torch.mean(activations, dim=1).squeeze()
+
+            heatmap = np.maximum(heatmap, 0)
+
+            heatmap /= torch.max(heatmap)
+
+            # plt.matshow(heatmap.squeeze())
+            # plt.show()
+
+            img = np.array(img.squeeze().cpu())
+
+            backtorgb = img.transpose((1,2,0))
+
+            backtorgb = cv2.resize(src=np.array(backtorgb), dsize=(224, 224))
+            heatmap = cv2.resize(src=np.array(heatmap), dsize=(224, 224))
+            heatmap = np.uint8(255 * heatmap)
+            heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+            backtorgb = backtorgb + 2
+            backtorgb = (backtorgb)/np.max(backtorgb)
+            backtorgb = np.uint8(125*backtorgb)
+
+
+            superimposed_img = heatmap * 0.25  + backtorgb
+            # cv2.imshow('a', backtorgb)
+            # cv2.waitKey(0)
+            if not os.path.isdir('grad_img'):
+                os.makedirs('grad_img')
+            cv2.imwrite(f'grad_img/map{index}.jpg', superimposed_img)
+        return
+
+    if args.tsne:
+        model.cpu()
+        val_loader = torch.utils.data.DataLoader(
+            ImageFolder(valdir, transforms.Compose([
+                transforms.Resize(256),
+                transforms.CenterCrop(224),
+                transforms.ToTensor(),
+                normalize,
+            ])),
+            batch_size=args.batch_size, shuffle=False,
+            num_workers=args.workers, pin_memory=True)
+        modelt = TSNE(n_components=2, learning_rate=100)
+
+        fig = plt.figure(figsize=(10, 5))
+        # ax = fig.add_subplot(111, projection='3d')
+        ax = fig.add_subplot(111)
+
+        for index,(img,tar) in enumerate(val_loader):
+            try:
+                tar = tar.view(args.batch_size,1)
+            except:
+                tar = tar.view(len(tar),1)
+            tar = tar.cpu().detach().numpy()
+
+            if index == 0:
+                feature = model(img)
+                feature = feature.cpu().detach().numpy()
+                feature = np.concatenate([feature,tar],axis=1)
+                print(feature.shape)
+            else:
+                feature_t = model(img)
+                feature_t = feature_t.cpu().detach().numpy()
+                feature_t = np.concatenate([feature_t,tar],axis=1)
+                feature=np.concatenate([feature,feature_t],axis=0)
+
+
+        tar = feature[:,-1]
+        feature = feature[:,:-1]
+        tar = tar.reshape((819,1))
+
+        transformed = modelt.fit_transform(feature)
+        transformed = np.concatenate([transformed,tar],axis=1)
+
+        tar_label = ['daisy', 'dandelion', 'rose', 'sunflower', 'tulip']
+        # labels = tar
+        labels = transformed[:,-1]
+        xs = transformed[:, 0]
+        ys = transformed[:, 1]
+        # zs = transformed[:, 2]
+
+        # ax.scatter(xs[:148], ys[:148], zs[:148], c='tab:blue', label = tar_label[0])
+        # ax.scatter(xs[148:349], ys[148:349], zs[148:349], c='tab:orange', label = tar_label[1])
+        # ax.scatter(xs[349:496], ys[349:496], zs[349:496], c='tab:green', label = tar_label[2])
+        # ax.scatter(xs[496:633], ys[496:633], zs[496:633], c='tab:red', label = tar_label[3])
+        # ax.scatter(xs[633:], ys[633:], zs[633:], c='#353038', label = tar_label[4])
+        ax.scatter(xs[:148], ys[:148], c='tab:blue', label=tar_label[0])
+        ax.scatter(xs[148:349], ys[148:349], c='tab:orange', label=tar_label[1])
+        ax.scatter(xs[349:496], ys[349:496], c='tab:green', label=tar_label[2])
+        ax.scatter(xs[496:633], ys[496:633], c='tab:red', label=tar_label[3])
+        ax.scatter(xs[633:], ys[633:], c='#353038', label=tar_label[4])
+        plt.scatter
+
+        ax.legend()
+        ax.grid(True)
+
+        plt.show()
+        return
+
+
+
+
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
             train_sampler.set_epoch(epoch)
@@ -379,7 +535,7 @@ def main_worker(gpu, ngpus_per_node, args):
                 'state_dict': model.state_dict(),
                 'best_acc1': best_acc1,
                 'optimizer' : optimizer.state_dict(),
-            }, is_best)
+            }, is_best,'flower_best.pth')
 
 
 def train(train_loader, model, criterion, optimizer, epoch, args):
@@ -409,6 +565,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
         ## 모델의 결과를 받아온다.
         output = model(images)
         ## 위에 정의한 크로스 엔트로피 로스에 모델 결과와 GT 비교
+
         loss = criterion(output, target)
 
         ## 정확도를 측정하고 로스를 기록한다.
@@ -544,7 +701,6 @@ def accuracy(output, target, topk=(1,)):
         for k in topk:
             correct_k = correct[:k].reshape(-1).float().sum(0, keepdim=True)
             res.append(correct_k.mul_(100.0 / batch_size))
-        print('res : ',res)
         return res
 
 
