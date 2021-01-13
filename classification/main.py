@@ -35,24 +35,25 @@ import torchvision.datasets as datasets
 import torchvision.models as models
 from ImageFolder import ImageFolder
 from model import resnet
+from model import vgg
 import cv2
 from sklearn.manifold import TSNE
 import seaborn as sns
 
-model_names = sorted(name for name in models.__dict__
-    if name.islower() and not name.startswith("__")
-    and callable(models.__dict__[name]))
+# model_names = sorted(name for name in models.__dict__
+#     if name.islower() and not name.startswith("__")
+#     and callable(models.__dict__[name]))
 # model_name은 torchvision에 있는 모델들의 이름을 하나의 리스트로 저장 모델이름이 __로 시작하는것은 제외
 
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
 parser.add_argument('data', metavar='DIR',
                     help='path to dataset')
-parser.add_argument('-a', '--arch', metavar='ARCH', default='resnet18',
-                    choices=model_names,
-                    help='model architecture: ' +
-                        ' | '.join(model_names) +
-                        ' (default: resnet18)')
+parser.add_argument('-a', '--arch', metavar='ARCH', default='resnet18'),
+                    # choices=model_names,
+                    # help='model architecture: ' +
+                    #     ' | '.join(model_names) +
+                    #     ' (default: resnet18)')
 parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
 parser.add_argument('--epochs', default=90, type=int, metavar='N',
@@ -87,7 +88,7 @@ parser.add_argument('--dist-url', default='tcp://224.66.41.62:23456', type=str,
                     help='url used to set up distributed training')
 parser.add_argument('--dist-backend', default='nccl', type=str,
                     help='distributed backend')
-parser.add_argument('--seed', default=None, type=int,
+parser.add_argument('--seed', default=777, type=int,
                     help='seed for initializing training. ')
 parser.add_argument('--gpu', default=None, type=int,
                     help='GPU id to use.')
@@ -100,6 +101,8 @@ parser.add_argument('-g','--gradcam',dest='gradcam',action='store_true',
                     help='See grad cam')
 parser.add_argument('-t','--tsne',dest='tsne',action='store_true',
                     help='See tSNE')
+parser.add_argument('--numclasses',default=None,type=int,
+                    help='Classes')
 
 ## argument 파싱하는 부분
 ## 학습할 것인지, 밸리데이션 할것인지, 모델이름, gpu사용  할것인지 등에 대한 정보를 입력해주는 부분
@@ -120,6 +123,7 @@ def main():
         torch.manual_seed(args.seed)
         ## torch.manual_seed를 고정하는 이유는 torch라이브러리에서 사용되는 난수들을 고정시키기 위함
         cudnn.deterministic = True
+        np.random.seed(args.seed)
         ## cudnn 역시 난수를 고정하기 위해서 True값을 사용.
         ## 부작용으로는 연산 속도가 줄어드는 현상이 발생 할 수 있다.
         warnings.warn('You have chosen to seed training. '
@@ -201,11 +205,42 @@ def main_worker(gpu, ngpus_per_node, args):
         ## 사전훈련된 모델을 사용하기 위한 코드
         print("=> using pre-trained model '{}'".format(args.arch))
         # model = models.__dict__[args.arch](pretrained=True)
-        model = resnet.resnet18(pretrained=True,num_classes=5)
+        if args.arch == 'vgg':
+            model = vgg.vgg11_bn(pretrained=True, num_classes=args.numclasses)
+        elif args.arch == 'resnet':
+            model = resnet.resnet18(num_classes=args.numclasses)
     else:
         ## 일반 모델을 사용하기 위한 코드
         print("=> creating model '{}'".format(args.arch))
-        model = resnet.resnet18(num_classes=5)
+        if args.arch == 'vgg':
+            model = vgg.vgg11_bn(num_classes=args.numclasses)
+        elif args.arch == 'resnet':
+            model = resnet.resnet18(num_classes=args.numclasses)
+    # print(model)
+    # print(model.state_dict().keys())
+    # total_params = 0
+    # for t in model.state_dict().keys():
+    #     if 'weight' in t:
+    #         # print(t,":",model.state_dict()[t].shape)
+    #         if 'fc' in t or 'classifier' in t:
+    #             a = model.state_dict()[t].shape[0]
+    #             b = model.state_dict()[t].shape[1]
+    #             params = a * b
+    #             print(t, model.state_dict()[t].shape, params)
+    #             total_params += a * b
+    #         elif 'bn' in t or 'downsample.1' in t:
+    #             total_params += model.state_dict()[t].shape[0]
+    #             print(t, model.state_dict()[t].shape, params)
+    #         else:
+    #             a = model.state_dict()[t].shape[0]
+    #             b = model.state_dict()[t].shape[1]
+    #             c = model.state_dict()[t].shape[2]
+    #             d = model.state_dict()[t].shape[3]
+    #             params = a * b * c * d
+    #             print(t, model.state_dict()[t].shape, params)
+    #             total_params += a * b * c * d
+    # print("total_params : ",total_params)
+    # exit()
         # model = models.__dict__[args.arch]()
 
     if not torch.cuda.is_available():
@@ -535,7 +570,7 @@ def main_worker(gpu, ngpus_per_node, args):
                 'state_dict': model.state_dict(),
                 'best_acc1': best_acc1,
                 'optimizer' : optimizer.state_dict(),
-            }, is_best,'flower_best.pth')
+            }, is_best,f'flower_{args.arch}_best.pth')
 
 
 def train(train_loader, model, criterion, optimizer, epoch, args):
