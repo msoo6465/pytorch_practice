@@ -14,6 +14,8 @@ Training
 To train a model, run main.py with the desired model architecture and the path to the ImageNet dataset:
 
     python main.py -a resnet18 [imagenet-folder with train and val folders]
+    python main.py -a vgg ../flower_data --numclasses 5 --gpu 0 -b 32 --epochs
+
 The default learning rate schedule starts at 0.1 and decays by a factor of 10 every 30 epochs. This is appropriate for ResNet and models with batch normalization, but too high for AlexNet and VGG. Use 0.01 as the initial learning rate for AlexNet or VGG:
 
     python main.py -a alexnet --lr 0.01 [imagenet-folder with train and val folders]
@@ -85,3 +87,5 @@ Usage
                             processes per node, which has N GPUs. This is the
                             fastest way to use PyTorch for either single node or
                             multi node data parallel training
+      --seed
+      --numclasses
