@@ -103,6 +103,8 @@ parser.add_argument('-t','--tsne',dest='tsne',action='store_true',
                     help='See tSNE')
 parser.add_argument('--numclasses',default=None,type=int,
                     help='Classes')
+parser.add_argument('--dim', default=2, type=int,
+                    help='t-SNE dimension')
 
 ## argument 파싱하는 부분
 ## 학습할 것인지, 밸리데이션 할것인지, 모델이름, gpu사용  할것인지 등에 대한 정보를 입력해주는 부분
@@ -284,9 +286,10 @@ def main_worker(gpu, ngpus_per_node, args):
     교차 엔트로피 함수
     '''
 
-    optimizer = torch.optim.SGD(model.parameters(), args.lr,
-                                momentum=args.momentum,
-                                weight_decay=args.weight_decay)
+    # optimizer = torch.optim.SGD(model.parameters(), args.lr,
+    #                             momentum=args.momentum,
+    #                             weight_decay=args.weight_decay)
+    optimizer = torch.optim.Adam(model.parameters(), args.lr)
     '''
     최적화 함수로 SGD를 사용
     옵티마이저는 계산된 기울기를 기반으로 매개변수를 업데이트 한다.
@@ -324,8 +327,11 @@ def main_worker(gpu, ngpus_per_node, args):
             for k,v in state_dict.items():
                 if 'module' in k:
                     r = k[7:]
-                new_state_dict[r] = v
-            model.load_state_dict(new_state_dict)
+                    new_state_dict[r] = v
+            if new_state_dict:
+                model.load_state_dict(new_state_dict)
+            else:
+                model.load_state_dict(checkpoint['state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer'])
             print("=> loaded checkpoint '{}' (epoch {})"
                   .format(args.resume, checkpoint['epoch']))
@@ -484,11 +490,16 @@ def main_worker(gpu, ngpus_per_node, args):
             ])),
             batch_size=args.batch_size, shuffle=False,
             num_workers=args.workers, pin_memory=True)
-        modelt = TSNE(n_components=2, learning_rate=100)
+        if args.dim == 2:
+            modelt = TSNE(n_components=2, learning_rate=100)
+        else:
+            modelt = TSNE(n_components=3, learning_rate=100)
 
-        fig = plt.figure(figsize=(10, 5))
-        # ax = fig.add_subplot(111, projection='3d')
-        ax = fig.add_subplot(111)
+        fig = plt.figure(figsize=(10, 10))
+        if args.dim == 3:
+            ax = fig.add_subplot(111, projection='3d')
+        else:
+            ax = fig.add_subplot(111)
 
         for index,(img,tar) in enumerate(val_loader):
             try:
@@ -499,11 +510,13 @@ def main_worker(gpu, ngpus_per_node, args):
 
             if index == 0:
                 feature = model(img)
+                feature=torch.nn.functional.log_softmax(feature)
                 feature = feature.cpu().detach().numpy()
                 feature = np.concatenate([feature,tar],axis=1)
                 print(feature.shape)
             else:
                 feature_t = model(img)
+                feature_t = torch.nn.functional.log_softmax(feature_t)
                 feature_t = feature_t.cpu().detach().numpy()
                 feature_t = np.concatenate([feature_t,tar],axis=1)
                 feature=np.concatenate([feature,feature_t],axis=0)
@@ -517,23 +530,21 @@ def main_worker(gpu, ngpus_per_node, args):
         transformed = np.concatenate([transformed,tar],axis=1)
 
         tar_label = ['daisy', 'dandelion', 'rose', 'sunflower', 'tulip']
-        # labels = tar
-        labels = transformed[:,-1]
         xs = transformed[:, 0]
         ys = transformed[:, 1]
-        # zs = transformed[:, 2]
-
-        # ax.scatter(xs[:148], ys[:148], zs[:148], c='tab:blue', label = tar_label[0])
-        # ax.scatter(xs[148:349], ys[148:349], zs[148:349], c='tab:orange', label = tar_label[1])
-        # ax.scatter(xs[349:496], ys[349:496], zs[349:496], c='tab:green', label = tar_label[2])
-        # ax.scatter(xs[496:633], ys[496:633], zs[496:633], c='tab:red', label = tar_label[3])
-        # ax.scatter(xs[633:], ys[633:], zs[633:], c='#353038', label = tar_label[4])
-        ax.scatter(xs[:148], ys[:148], c='tab:blue', label=tar_label[0])
-        ax.scatter(xs[148:349], ys[148:349], c='tab:orange', label=tar_label[1])
-        ax.scatter(xs[349:496], ys[349:496], c='tab:green', label=tar_label[2])
-        ax.scatter(xs[496:633], ys[496:633], c='tab:red', label=tar_label[3])
-        ax.scatter(xs[633:], ys[633:], c='#353038', label=tar_label[4])
-        plt.scatter
+        if args.dim == 3:
+            zs = transformed[:, 2]
+            ax.scatter(xs[:148], ys[:148],zs[:148], c='tab:blue', label=tar_label[0])
+            ax.scatter(xs[148:349], ys[148:349],zs[148:349], c='tab:orange', label=tar_label[1])
+            ax.scatter(xs[349:496], ys[349:496],zs[349:496], c='tab:green', label=tar_label[2])
+            ax.scatter(xs[496:633], ys[496:633],zs[496:633], c='tab:red', label=tar_label[3])
+            ax.scatter(xs[633:], ys[633:],zs[633:], c='#353038', label=tar_label[4])
+        else:
+            ax.scatter(xs[:148], ys[:148], c='tab:blue', label=tar_label[0])
+            ax.scatter(xs[148:349], ys[148:349], c='tab:orange', label=tar_label[1])
+            ax.scatter(xs[349:496], ys[349:496], c='tab:green', label=tar_label[2])
+            ax.scatter(xs[496:633], ys[496:633], c='tab:red', label=tar_label[3])
+            ax.scatter(xs[633:], ys[633:], c='#353038', label=tar_label[4])
 
         ax.legend()
         ax.grid(True)
@@ -570,7 +581,7 @@ def main_worker(gpu, ngpus_per_node, args):
                 'state_dict': model.state_dict(),
                 'best_acc1': best_acc1,
                 'optimizer' : optimizer.state_dict(),
-            }, is_best,f'flower_{args.arch}_best.pth')
+            }, is_best,f'flower_{args.arch}_checkpoint.pth',f'flower_{args.arch}_best.pth')
 
 
 def train(train_loader, model, criterion, optimizer, epoch, args):
@@ -596,12 +607,12 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
             images = images.cuda(args.gpu, non_blocking=True)
         if torch.cuda.is_available():
             target = target.cuda(args.gpu, non_blocking=True)
-
         ## 모델의 결과를 받아온다.
         output = model(images)
+        # print(output)
         ## 위에 정의한 크로스 엔트로피 로스에 모델 결과와 GT 비교
-
         loss = criterion(output, target)
+        # print(loss)
 
         ## 정확도를 측정하고 로스를 기록한다.
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
@@ -668,10 +679,10 @@ def validate(val_loader, model, criterion, args):
     return top1.avg
 
 
-def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
+def save_checkpoint(state, is_best, filename='checkpoint.pth.tar',best='model_best.pth'):
     torch.save(state, filename)
     if is_best:
-        shutil.copyfile(filename, 'model_best.pth.tar')
+        shutil.copyfile(filename, best)
 
 
 class AverageMeter(object):
