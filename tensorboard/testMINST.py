@@ -69,8 +69,8 @@ def main():
 
     model = MNIST_model.MNIST_model().to(device)
     # model = litmnistmodel.DNNet().to(device)
-
-    # criterion = torch.nn.functional.nll_loss
+    print(model)
+    criterion = torch.nn.functional.nll_loss
     criterion = torch.nn.CrossEntropyLoss().to(device)
     optimizer = torch.optim.SGD(model.parameters(),lr=args.lr,momentum=0.9)
 
@@ -82,13 +82,16 @@ def main():
         print(os.getcwd())
         if os.path.isfile(args.resume):
             print("=> loading checkpoint '{}'".format(args.resume))
+
             checkpoint = torch.load(args.resume,map_location='cuda:0')
+
             args.start_epoch = checkpoint['epoch']
             best_acc = checkpoint['best_acc']
-            best_acc
+
             model.load_state_dict(checkpoint['state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer'])
             print(f"=> loaded checkpoint '{args.resume}' (epoch{checkpoint['epoch']})")
+
         else:
             print(os.path.join(os.getcwd(),args.resume))
             print(f"No Checkpoint {args.resume}")
@@ -121,7 +124,6 @@ def main():
         img = np.array(img.squeeze().unsqueeze(2).cpu())
 
         backtorgb = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
-        print(backtorgb.shape)
 
         backtorgb = cv2.resize(src=np.array(backtorgb),dsize=(224,224))
         heatmap = cv2.resize(src=np.array(heatmap),dsize = (224,224))
@@ -144,6 +146,27 @@ def main():
     for epoch in range(args.epochs):
         avg_cost = 0
         model.train()
+        print(model.state_dict().keys())
+        total_params = 0
+
+        for t in model.state_dict().keys():
+            if 'weight' in t:
+                if 'fc' in t or 'layer4' in t:
+                    a = model.state_dict()[t].shape[0]
+                    b = model.state_dict()[t].shape[1]
+                    params = a * b
+                    print(t, model.state_dict()[t].shape, params)
+                    total_params += a*b
+                else:
+                    a = model.state_dict()[t].shape[0]
+                    b = model.state_dict()[t].shape[1]
+                    c = model.state_dict()[t].shape[2]
+                    d = model.state_dict()[t].shape[3]
+                    params = a*b*c*d
+                    print(t,model.state_dict()[t].shape,params)
+                    total_params += a*b*c*d
+        print('total_params : ',total_params)
+        exit()
         for i,(X,Y) in enumerate(data_loader):
 
             X = X.to(device)

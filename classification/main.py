@@ -437,6 +437,11 @@ def main_worker(gpu, ngpus_per_node, args):
         for index, (img,_) in enumerate(val_loader):
             # img, _ = next(iter(val_loader))
             pred = model(img.cpu())
+            if torch.argmax(pred) == _:
+                print(torch.argmax(pred))
+                print(_)
+                print("=====================")
+            continue
 
             pred[:, _.item()].backward()
 
@@ -453,7 +458,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
             heatmap = np.maximum(heatmap, 0)
 
-            heatmap /= torch.max(heatmap)
+            # heatmap /= torch.max(heatmap)
 
             # plt.matshow(heatmap.squeeze())
             # plt.show()
@@ -464,14 +469,16 @@ def main_worker(gpu, ngpus_per_node, args):
 
             backtorgb = cv2.resize(src=np.array(backtorgb), dsize=(224, 224))
             heatmap = cv2.resize(src=np.array(heatmap), dsize=(224, 224))
-            heatmap = np.uint8(255 * heatmap)
+            heatmap = heatmap - np.min(heatmap)
+            heatmap = heatmap / np.max(heatmap)
+            # heatmap = np.uint8(255 * heatmap)
             heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
             backtorgb = backtorgb + 2
             backtorgb = (backtorgb)/np.max(backtorgb)
             backtorgb = np.uint8(125*backtorgb)
 
 
-            superimposed_img = heatmap * 0.25  + backtorgb
+            superimposed_img = heatmap   + backtorgb
             # cv2.imshow('a', backtorgb)
             # cv2.waitKey(0)
             if not os.path.isdir('grad_img'):

@@ -63,6 +63,37 @@ class ImageFolder(data.Dataset):
                 ## sample의 형태 (image_path, index) index는 라벨에 맞는 번호로써 학습이나 밸리데이션 하는 부분에서 비교 하기 위해 label을 index화 시킴
                 samples.append((os.path.join(label_dir, filename), index))  # Caution: we use index as label, no directory name
 
+        if not self.is_valid_file:
+            self.imgaug = iaa.Sequential([
+                iaa.Fliplr(0.5), # horizontal flips
+                iaa.Crop(percent=(0, 0.1)), # random crops
+                # Small gaussian blur with random sigma between 0 and 0.5.
+                # But we only blur about 50% of all images.
+                iaa.Sometimes(
+                    0.5,
+                    iaa.GaussianBlur(sigma=(0, 0.5))
+                ),
+                # Strengthen or weaken the contrast in each image.
+                iaa.LinearContrast((0.75, 1.5)),
+                # Add gaussian noise.
+                # For 50% of all images, we sample the noise once per pixel.
+                # For the other 50% of all images, we sample the noise per pixel AND
+                # channel. This can change the color (not only brightness) of the
+                # pixels.
+                iaa.AdditiveGaussianNoise(loc=0, scale=(0.0, 0.05*255), per_channel=0.5),
+                # Make some images brighter and some darker.
+                # In 20% of all cases, we sample the multiplier once per channel,
+                # which can end up changing the color of the images.
+                iaa.Multiply((0.8, 1.2), per_channel=0.2),
+                # Apply affine transformations to each image.
+                # Scale/zoom them, translate/move them, rotate them and shear them.
+                iaa.Affine(
+                    scale={"x": (0.8, 1.2), "y": (0.8, 1.2)},
+                    translate_percent={"x": (-0.2, 0.2), "y": (-0.2, 0.2)},
+                    rotate=(-25, 25),
+                    shear=(-8, 8)
+                )
+            ], random_order=True)
         self.samples = samples
         self.targets = [s[1] for s in samples]
 
@@ -88,6 +119,12 @@ class ImageFolder(data.Dataset):
         # apply transform to target(label)
         if self.target_transform is not None:
             target = self.target_transform(target)
+
+        # os.makedirs('tmp',exist_ok=True)
+        # mean = torch.as_tensor([0.485, 0.456, 0.406], dtype=torch.float32).reshape(3, 1, 1)
+        # std = torch.as_tensor([0.229, 0.224, 0.225], dtype=torch.float32).reshape(3, 1, 1)
+        # sample_cpu = sample.mul_(std).add_(mean).mul_(255).clamp_(0, 255).permute(1, 2, 0).cpu().numpy().astype(np.uint8)
+        # Image.fromarray(sample_cpu).save(os.path.join('tmp', os.path.basename(path)))
 
         return sample, target
 
