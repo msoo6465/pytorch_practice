@@ -126,6 +126,8 @@ def main():
         ## torch.manual_seed를 고정하는 이유는 torch라이브러리에서 사용되는 난수들을 고정시키기 위함
         cudnn.deterministic = True
         np.random.seed(args.seed)
+        torch.cuda.manual_seed(args.seed)
+        torch.cuda.manual_seed_all(args.seed)
         ## cudnn 역시 난수를 고정하기 위해서 True값을 사용.
         ## 부작용으로는 연산 속도가 줄어드는 현상이 발생 할 수 있다.
         warnings.warn('You have chosen to seed training. '
